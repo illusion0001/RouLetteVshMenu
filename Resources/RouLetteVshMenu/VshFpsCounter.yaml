@@ -13,7 +13,7 @@ overlay:
         showAppName: On
         showClockSpeeds: On
         temperatureType: BOTH # Available options BOTH, CELSIUS, FAHRENHEIT 
-        textSize: 20.0
+        textSize: 16.0
         showPlayTime: Off
    
       game:
@@ -27,6 +27,6 @@ overlay:
         showAppName: On
         showClockSpeeds: On
         temperatureType: BOTH # Available options BOTH, CELSIUS, FAHRENHEIT 
-        textSize: 20.0
+        textSize: 16.0
         showPlayTime: Off
       

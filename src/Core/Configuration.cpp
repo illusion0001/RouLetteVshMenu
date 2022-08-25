@@ -180,7 +180,7 @@ void Config::ResetSettings()
         overlay.mode[i].showAppName = true;
         overlay.mode[i].showClockSpeeds = true;
         overlay.mode[i].temperatureType = TemperatureType::BOTH;
-        overlay.mode[i].textSize = 20.0f;
+        overlay.mode[i].textSize = 16.0f;
         overlay.mode[i].showPlayTime = false;
     }
 }

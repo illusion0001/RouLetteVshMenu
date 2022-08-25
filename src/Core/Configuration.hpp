@@ -50,7 +50,7 @@ public:
             bool showAppName = true;
             bool showClockSpeeds = true;
             TemperatureType temperatureType = TemperatureType::BOTH;
-            float textSize = 20.0f;
+            float textSize = 16.0f;
             bool showPlayTime = false;
         } mode[5]; // 0 = XMB, 1 = GAME, 2 = DEFAULT, 3 = DEFAULT, 4 = DEFAULT
     } overlay;
