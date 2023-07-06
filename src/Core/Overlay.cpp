@@ -6,13 +6,15 @@ Overlay g_Overlay;
 Overlay::Overlay()
 {
     m_ReloadConfigTime = GetTimeNow() + 10000;
-
     // find clock speed offsets only when they are displayed
-    if (g_Config.overlay.mode[Config::DisplayMode::XMB].showClockSpeeds 
+    if (g_Config.overlay.mode[Config::DisplayMode::XMB].showClockSpeeds
         || g_Config.overlay.mode[Config::DisplayMode::GAME].showClockSpeeds)
-        sys_ppu_thread_create(&LoadExternalOffsetsThreadId, LoadExternalOffsets, 0, 0xB02, 512, SYS_PPU_THREAD_CREATE_JOINABLE, "Overlay::LoadExternalOffsets()");
+    {
+        vsh::printf("Thread Start Overlay::LoadExternalOffsets():  0x%08x\n", sys_ppu_thread_create(&LoadExternalOffsetsThreadId, LoadExternalOffsets, 0, 0xB02, 512, SYS_PPU_THREAD_CREATE_JOINABLE, "Overlay::LoadExternalOffsets()"));
+    }
 
-    sys_ppu_thread_create(&UpdateInfoThreadId, UpdateInfoThread, 0, 0xB01, 512, SYS_PPU_THREAD_CREATE_JOINABLE, "Overlay::UpdateInfoThread()");
+    vsh::printf("Thread Start Overlay::InputThread():  0x%08x\n", sys_ppu_thread_create(&InputThreadId, InputThread, 0, 0xB01, 512, SYS_PPU_THREAD_CREATE_JOINABLE, "Overlay::InputThread()"));
+    vsh::printf("Thread Start Overlay::UpdateInfoThread():  0x%08x\n", sys_ppu_thread_create(&UpdateInfoThreadId, UpdateInfoThread, 0, 0xB01, 512, SYS_PPU_THREAD_CREATE_JOINABLE, "Overlay::UpdateInfoThread()"));
 }
 
 void Overlay::OnUpdate()
@@ -23,10 +25,13 @@ void Overlay::OnUpdate()
        m_ReloadConfigTime = GetTimeNow() + 10000;
    }*/
 
-   UpdatePosition();
-   CalculateFps();
-   DrawOverlay();
-   Lv2LabelUpdate();
+    CalculateFps();
+    if (g_Overlay.m_showOverlay)
+    {
+        UpdatePosition();
+        DrawOverlay();
+        Lv2LabelUpdate();
+    }
 }
 
 void Overlay::OnShutdown()
@@ -61,9 +66,20 @@ void Overlay::DrawOverlay()
 
    vsh::paf::View* gamePlugin = vsh::paf::View::Find("game_plugin");
    std::wstring overlayText;
+   if (g_Overlay.m_showDebugInfo)
+   {
+       overlayText += L"Development Build: " __DATE__ " @ "__TIME__ "\n";
+   }
 
    if (g_Config.overlay.mode[(int)m_CooperationMode].showFPS)
    {
+       if (g_Overlay.m_showDebugInfo)
+       {
+           std::wstring RecordingStr = g_Overlay.m_Recording == true ? L"yes\n" : L"no\n";
+           overlayText += L"Recording: " + RecordingStr;
+           RecordingStr = g_Overlay.m_ThreadAlive == true ? L"yes\n" : L"no (Please reload plugin or restart system and check if buttons work)\n";
+           overlayText += L"Input Thread Alive: " + RecordingStr;
+       }
        overlayText += L"FPS: " + to_wstring(m_FPS, 2) + L"\n";
    }
 
@@ -248,6 +264,8 @@ void Overlay::CalculateFps()
    m_FpsLastTime = timeNow;
    ++m_FpsFrames;
    m_FpsTimeElapsed += fElapsedInFrame;
+   m_Frametime = fElapsedInFrame;
+   m_SinceTimeStart += fElapsedInFrame;
 
    // report fps at appropriate interval
    if (m_FpsTimeElapsed >= m_FpsTimeReport)
@@ -397,6 +415,11 @@ void Overlay::UpdateInfoThread(uint64_t arg)
    while (g_Overlay.m_StateRunning)
    {
       Sleep(refreshDelay * 1000);
+      // if we're not showing the overlay, don't bother sending data to lv2
+      if (!g_Overlay.m_showOverlay)
+      {
+          continue;
+      }
 
       // Using syscalls in a loop on hen will cause a black screen when launching a game
       // so in order to fix this we need to sleep 10/15 seconds when a game is launched
@@ -522,5 +545,88 @@ void Overlay::LoadExternalOffsets(uint64_t arg)
     g_Overlay.m_GpuGddr3RamClockSpeedOffsetInLv1 = addr + 0x14;
     */
 
+    sys_ppu_thread_exit(0);
+}
+
+void Overlay::DoRecording()
+{
+    g_Overlay.m_Recording = !g_Overlay.m_Recording;
+    g_Overlay.m_SinceTimeStart = 0.f;
+    if (g_Overlay.m_Recording)
+    {
+        struct tm t;
+        t = *vsh::gmtime(&(time_t){ vsh::time(NULL) });
+        g_Overlay.m_Logfd = 0;
+        char _outTitleId[16] = {0};
+        char _outTitleName[64] = {0};
+        char LogFilePath[256] = {0};
+        const char* CSV_header = "//Ignore=True\n"
+                                 "TimeInSeconds,msBetweenPresents\n";
+        GetGameName(_outTitleId, _outTitleName);
+        vsh::snprintf(LogFilePath, sizeof(LogFilePath), "/dev_hdd0/tmp/data-%s-%d-%02d-%02d_%02d%02d%02d.csv", vsh::strlen(_outTitleId) == 0 ? "vsh.self" : _outTitleId, t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+        if ((cellFsOpen(LogFilePath, CELL_FS_O_WRONLY | CELL_FS_O_CREAT | CELL_FS_O_TRUNC, &g_Overlay.m_Logfd, nullptr, 0) == CELL_FS_SUCCEEDED))
+        {
+            uint64_t written = 0;
+            cellFsLseek(g_Overlay.m_Logfd, 0, CELL_FS_SEEK_SET, nullptr);
+            cellFsWrite(g_Overlay.m_Logfd, CSV_header, strlen(CSV_header), &written);
+            vsh::printf("File: %s\ng_Overlay.m_Logfd: 0x%08x\nwritten: %li\n", LogFilePath, g_Overlay.m_Logfd, written);
+            vsh::ShowNofityWithSound(L"Recording started.", vsh::eNotifyIcon::Caution, vsh::eNotifySound::Trophy);
+        }
+    }
+    else if (!g_Overlay.m_Recording)
+    {
+        vsh::printf("cellFsClose: 0x%08x\n", cellFsClose(g_Overlay.m_Logfd));
+        vsh::ShowNofityWithSound(L"Recording stopped.", vsh::eNotifyIcon::Caution, vsh::eNotifySound::Trophy);
+    }
+}
+
+void Overlay::InputThread(uint64_t arg)
+{
+    vsh::ShowNofityWithSound(L"Started listen for input.\nBuilt: " __TIME__ " @ " __DATE__, vsh::eNotifyIcon::Caution, vsh::eNotifySound::Trophy);
+    g_Overlay.m_ThreadAlive = true;
+
+    bool previousTriangleState = false;
+    bool previousSquareState = false;
+    bool previousCircleState = false;
+
+    while (g_Overlay.m_ThreadAlive)
+    {
+        g_Overlay.m_ThreadAlive = true;
+        cellPadGetData(0, &g_Overlay.m_GamePadData);
+
+        bool currentTriangleState = g_Overlay.m_GamePadData.button[CELL_PAD_BTN_OFFSET_DIGITAL2] & CELL_PAD_CTRL_TRIANGLE;
+        bool currentSquareState = g_Overlay.m_GamePadData.button[CELL_PAD_BTN_OFFSET_DIGITAL2] & CELL_PAD_CTRL_SQUARE;
+        bool currentCircleState = g_Overlay.m_GamePadData.button[CELL_PAD_BTN_OFFSET_DIGITAL2] & CELL_PAD_CTRL_CIRCLE;
+
+        if (currentTriangleState && !previousTriangleState)
+        {
+            DoRecording();
+        }
+
+        if (currentSquareState && !previousSquareState)
+        {
+            g_Overlay.m_showOverlay = !g_Overlay.m_showOverlay;
+        }
+
+        if (currentCircleState && !previousCircleState)
+        {
+            g_Overlay.m_showDebugInfo = !g_Overlay.m_showDebugInfo;
+        }
+
+        previousTriangleState = currentTriangleState;
+        previousSquareState = currentSquareState;
+        previousCircleState = currentCircleState;
+
+        if (g_Overlay.m_Recording)
+        {
+            char CSV_data[32]{};
+            int32_t chars = vsh::snprintf(CSV_data, sizeof(CSV_data), "%f,%f\n", g_Overlay.m_SinceTimeStart, g_Overlay.m_Frametime);
+            cellFsWrite(g_Overlay.m_Logfd, CSV_data, chars, nullptr);
+        }
+
+        // since ppu thread is quite slow and CellFs writes to the desciptor with no wait of buffers or a way to flush
+        // we have to sleep the thread for a bit
+        Sleep(33);
+    }
     sys_ppu_thread_exit(0);
 }

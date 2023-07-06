@@ -1,4 +1,5 @@
 #pragma once
+#include <cell/pad.h>
 #include <string>
 #include <sys/ppu_thread.h>
 #include <vsh/netctl_main.h>
@@ -33,15 +34,18 @@ private:
    void DrawOverlay();
    void UpdatePosition();
    void CalculateFps();
-   void GetGameName(char outTitleId[16], char outTitleName[64]);
    uint32_t GetGpuClockSpeed();
    uint32_t GetGpuGddr3RamClockSpeed();
    uint32_t GetCpuClockSpeed();
    static void UpdateInfoThread(uint64_t arg);
    static void LoadExternalOffsets(uint64_t arg);
+   static void GetGameName(char outTitleId[16], char outTitleName[64]);
+   static void DoRecording();
+   static void InputThread(uint64_t arg);
 
 public:
    sys_ppu_thread_t UpdateInfoThreadId = SYS_PPU_THREAD_ID_INVALID;
+   sys_ppu_thread_t InputThreadId = SYS_PPU_THREAD_ID_INVALID;
    sys_ppu_thread_t LoadExternalOffsetsThreadId = SYS_PPU_THREAD_ID_INVALID;
    bool m_StateRunning{};
    float m_CPUTemp{};
@@ -61,6 +65,14 @@ public:
    uint64_t m_GpuClockSpeedOffsetInLv1{};
    uint64_t m_GpuGddr3RamClockSpeedOffsetInLv1{};
    uint64_t m_CpuClockSpeedOffsetInLv1{};
+
+   bool m_showOverlay = true;
+   bool m_showDebugInfo = true;
+   bool m_Recording{};
+   float m_SinceTimeStart = 0.f;
+   bool m_ThreadAlive{};
+   int32_t m_Logfd{};
+   CellPadData m_GamePadData{};
 
 private:
     // Common
@@ -83,6 +95,7 @@ private:
    double m_FpsTimeReport = 0;
    double m_FpsTimeLastReport = 0;
    float m_FpsREPORT_TIME = 1.0f;
+   float m_Frametime = 1. / 60.f;
 
    // LV2 Label Text
    static constexpr size_t MAX_LV2_STRING_SIZE = 0x80;

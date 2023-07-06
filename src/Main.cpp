@@ -20,10 +20,14 @@ sys_ppu_thread_t gVshMenuPpuThreadId = SYS_PPU_THREAD_ID_INVALID;
 CDECL_BEGIN
 int module_start(unsigned int args, void* argp)
 {
+   cellPadInit(7);
    sys_ppu_thread_create(&gVshMenuPpuThreadId, [](uint64_t arg) -> void
    {
-      do
-          Sleep(1000);
+       do
+       {
+           vsh::printf("Finding explore_plugin\n");
+           Sleep(1000);
+       }
       while (!vsh::paf::View::Find("explore_plugin"));
 
       g_Render = Render();
